@@ -10,6 +10,8 @@ import org.scalacheck.{ Arbitrary, Gen }
 import org.http4s.{ Request, Uri }
 import argonaut._, Argonaut._
 
+import scalaz.stream.Process
+
 import streaming._
 
 class TwitterSpec extends PropSpec with GeneratorDrivenPropertyChecks with Matchers {
@@ -57,10 +59,11 @@ class TwitterSpec extends PropSpec with GeneratorDrivenPropertyChecks with Match
       "user" := Json()              // Totally cheating, hope this works
     )
   }
-  implicit lazy val arbJson: Arbitrary[Json] = Arbitrary(Gen.frequency(
+  val genJson = Gen.frequency(
     9 -> genTweet,
     1 -> Data.jsonValueGenerator()
-  ))
+  )
+  implicit lazy val arbJsons = Arbitrary(Gen.containerOfN[List, Json](5000, genJson).suchThat(_.size == 5000))
 
   property("Getting Twitter Stream succeeds") {
     val testSize = 100
@@ -72,14 +75,11 @@ class TwitterSpec extends PropSpec with GeneratorDrivenPropertyChecks with Match
     r should have size testSize
   }
 
-  property("update() combines old Stats and new JSON correctly") {
-    forAll ("old Stats", "new JSON") { (stats: Stats, json: Json) =>
-      val ht = (json.hcursor --\ "entities" --\ "hashtags").as[List[String]].fold(
-        (_, _) => List.empty[String],
-        identity
-      )
-      val r = update(stats, json)
-      assert(false)
+  property("count transducer identifies top 5 hashtags correctly") {
+    forAll ("old Stats", "incoming stream") { (stats: Stats, jsons: List[Json]) =>
+      val s = Process.emitAll(jsons).toSource
+      val r = s |> count
+      r.runLast.run.get.hashTags.heavyHitterKeys.toSet should === (Set("neworleans", "boston", "losangeles", "sanfrancisco", "asheville"))
     }
   }
 }

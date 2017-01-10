@@ -4,7 +4,9 @@ scalaVersion := "2.11.8"
 
 val http4sVersion = "0.14.11"
 
-resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases"
+(fork in Test) := true
+
+(javaOptions in Test) ++= Seq("-Xmx4g", "-Xss1G")
 
 libraryDependencies ++= Seq(
   "org.http4s"            %% "http4s-blaze-client" % http4sVersion,
