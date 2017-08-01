@@ -61,7 +61,7 @@ class TwitterSpec extends PropSpec with GeneratorDrivenPropertyChecks with Match
   }
   val genJson = Gen.frequency(
     9 -> genTweet,
-    1 -> Data.jsonValueGenerator()
+    1 -> argonaut.Data.jsonValueGenerator()
   )
   implicit lazy val arbJsons = Arbitrary(Gen.containerOfN[List, Json](5000, genJson).suchThat(_.size == 5000))
 

@@ -1,20 +1,43 @@
 package argonaut
 
-import scalaz._, Scalaz._
+import scalaz._
 import org.scalacheck.Arbitrary._
-import org.scalacheck.Gen.{frequency, choose, listOfN, const => value, oneOf}
+import org.scalacheck.Gen.{frequency, listOfN, const => value, oneOf}
 import Json._
-import org.scalacheck.{Gen, Arbitrary}
+import org.scalacheck.rng.Seed
+import org.scalacheck.{Arbitrary, Cogen, Gen}
+
 import scala.util.Random.shuffle
 
 object Data {
   val maxJsonStructureDepth = 3
 
+  implicit val ArbitraryUUID: Arbitrary[java.util.UUID] =
+    Arbitrary(Gen.uuid)
+
   implicit val bigDecimalEq: Equal[BigDecimal] = Equal.equalA[BigDecimal]
   implicit val bigIntEq: Equal[BigInt] = Equal.equalA[BigInt]
 
+  implicit val jsonNumberCogen: Cogen[JsonNumber] =
+    Cogen[BigDecimal].contramap[JsonNumber](_.toBigDecimal)
+
+  implicit val jsonObjectCogen: Cogen[JsonObject] =
+    Cogen[List[(String, Json)]].contramap[JsonObject](_.toMap.toList)
+
+  implicit def jsonCogen: Cogen[Json] =
+    Cogen((seed: Seed, json: Json) => json.fold(
+      seed,
+      Cogen[Boolean].perturb(seed, _),
+      Cogen[JsonNumber].perturb(seed, _),
+      Cogen[String].perturb(seed, _),
+      Cogen[List[Json]].perturb(seed, _),
+      Cogen[JsonObject].perturb(seed, _)
+    ))
+
+  // TODO: Add in generator for numbers that have an exponent that BigDecimal can't handle.
   val jsonNumberRepGenerator: Gen[JsonNumber] = Gen.oneOf(
-    arbitrary[Double].map(JsonDouble(_)),
+    arbitrary[List[Long]].map(ln => JsonBigDecimal(BigDecimal("0" ++ ln.filter(_ >= 0).mkString))),
+    arbitrary[Double].map(d => JsonDecimal(d.toString)),
     arbitrary[Long].map(JsonLong(_))
   )
 
@@ -25,7 +48,6 @@ object Data {
 
   val equivalentJsonNumberPair: Gen[EquivalentJsonNumberPair] = {
     def wrapInt(n: Int): Gen[JsonNumber] = Gen.oneOf(
-      JsonDouble(n),
       JsonLong(n),
       JsonBigDecimal(n),
       JsonDecimal(n.toString)
@@ -38,7 +60,6 @@ object Data {
     )
 
     def wrapDouble(n: Double): Gen[JsonNumber] = Gen.oneOf(
-      JsonDouble(n),
       JsonBigDecimal(BigDecimal(n)),
       JsonDecimal(n.toString)
     )
@@ -154,7 +175,7 @@ object Data {
     Arbitrary(Gen.listOf(arbTuple2[T, U].arbitrary).map(_.toMap))
 
   def jsonObjectGenerator(depth: Int = maxJsonStructureDepth): Gen[JObject] = arbImmutableMap(Arbitrary(arbitrary[String]), Arbitrary(jsonValueGenerator(depth - 1))).arbitrary.map{map =>
-    JObject(JsonObject.from(map.toList))
+    JObject(JsonObject.fromTraversableOnce(map.toList))
   }
 
   val nonJsonObjectGenerator = oneOf(jsonNumberGenerator, jsonStringGenerator, jsonBoolGenerator, jsonNothingGenerator, jsonArrayGenerator())
@@ -171,7 +192,7 @@ object Data {
 
   def objectsOfObjectsGenerator(depth: Int = maxJsonStructureDepth): Gen[Json] = {
     if (depth > 1) {
-      listOfN(2, arbTuple2(Arbitrary(arbitrary[String]), Arbitrary(objectsOfObjectsGenerator(depth - 1))).arbitrary).map(fields => JObject(JsonObject.from(fields)))
+      listOfN(2, arbTuple2(Arbitrary(arbitrary[String]), Arbitrary(objectsOfObjectsGenerator(depth - 1))).arbitrary).map(fields => JObject(JsonObject.fromTraversableOnce(fields)))
     } else {
       oneOf(jsonNumberGenerator, jsonStringGenerator, jsonBoolGenerator, jsonNothingGenerator)
     }
@@ -181,7 +202,7 @@ object Data {
     def buildPath(currentPath: Seq[String], original: Json, jsonValue: Json): (Seq[String], Json, Json) = {
       jsonValue match {
         case jsonObject: JObject => {
-          shuffle(jsonObject.o.toMap.toList.collect{case pair@ (innerString: String, innerValue: Json) => pair}.toList)
+          shuffle(jsonObject.o.toMap.toList.collect{case pair@ (innerString: String, innerValue: Json) => pair})
             .headOption
             .map{innerPair =>
               buildPath(currentPath :+ innerPair._1, original, innerPair._2)
@@ -216,7 +237,7 @@ object Data {
   implicit def ArbitraryJson: Arbitrary[Json] = Arbitrary(jsonValueGenerator())
 
   implicit def ArbitraryJsonObject: Arbitrary[JsonObject] =
-    Arbitrary(arbitrary[List[(JsonField, Json)]] map { JsonObject.from(_) })
+    Arbitrary(arbitrary[List[(JsonField, Json)]] map { JsonObject.fromTraversableOnce(_) })
 
   implicit def ArbitraryCursor: Arbitrary[Cursor] = {
     Arbitrary(arbitrary[Json] flatMap (j => {
@@ -230,7 +251,7 @@ object Data {
       , o =>
           for {
             r <- frequency((90, arbitrary[Cursor]), (10, c))
-            q <- frequency((90, oneOf(o.fields)), (10, arbitrary[JsonField]))
+            q <- frequency((90, if(o.fields.nonEmpty) oneOf(o.fields) else arbitrary[JsonField]), (10, arbitrary[JsonField]))
           } yield c downField q getOrElse r
       )
     }))

@@ -2,7 +2,7 @@ name := "twitter"
 
 scalaVersion := "2.11.11"
 
-val http4sVersion = "0.15.10a"
+val http4sVersion = "0.15.16a"
 
 (fork in Test) := true
 
@@ -10,8 +10,8 @@ val http4sVersion = "0.15.10a"
 
 libraryDependencies ++= Seq(
   "org.http4s"            %% "http4s-blaze-client" % http4sVersion,
-  "org.http4s"            %% "http4s-argonaut61"   % http4sVersion,
-  "org.spire-math"        %% "jawn-argonaut"       % "0.10.4",
+  "org.http4s"            %% "http4s-argonaut"     % http4sVersion,
+  "org.spire-math"        %% "jawn-argonaut"       % "0.11.0",
   "com.twitter"           %% "algebird-core"       % "0.12.3",
   "ch.qos.logback"         % "logback-classic"     % "1.1.8"        % "runtime",
   "org.scalatest"         %% "scalatest"           % "3.0.1"        % "test",
